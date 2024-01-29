@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "domains-salesforce-to-dnswatch"
+version = "0.1.0"
+description = "Constructs to facilitate update of DNSWatch from Salesforce"
+authors = ["johnalupton-dco <john.lupton@digital.cabinet-office.gov.uk>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+cddo-utils = { version = "^0.1.29", source = "artifact" }
+aws-cdk-lib = "^2.121.1"
+
+
+[tool.poetry.group.dev.dependencies]
+flake8 = "^7.0.0"
+black = "^23.12.1"
+isort = "^5.13.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[[tool.poetry.source]]
+name = "artifact"
+url = "https://cddo-637696396477.d.codeartifact.eu-north-1.amazonaws.com/pypi/cddo-utils/simple"
+priority = "supplemental"
