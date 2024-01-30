@@ -2,9 +2,8 @@ import aws_cdk.aws_events as events
 import aws_cdk.aws_events_targets as targets
 import aws_cdk.aws_sns as sns
 import aws_cdk.aws_stepfunctions as stepfunctions
-from aws_cdk import Stack, aws_iam as iam
-
-
+from aws_cdk import Stack
+from aws_cdk import aws_iam as iam
 from cddo.utils.lambdas import create_lambda
 
 
@@ -93,7 +92,7 @@ def create_schedule(
 
     snapshot_scheduler_role = SnapshotSchedulerRole(stack)
 
-    rule_name = "CheckFroSalesforceUpdatesStateMachine"
+    rule_name = "CheckFromSalesforceUpdatesStateMachine"
 
     target = targets.SfnStateMachine(state_machine, role=snapshot_scheduler_role)
 
