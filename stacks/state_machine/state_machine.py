@@ -11,7 +11,7 @@ from aws_cdk import Duration, RemovalPolicy, Stack
 from cddo.utils import constants as cnst
 from cddo.utils import lambdas
 
-from stacks.constants import LL_CDDO_UTILS, LL_REQUESTS, PS_SALESFORCE_LAST_CHECKED
+from stacks.constants import LL_CDDO_UTILS, LL_REQUESTS
 
 layers = {}
 
