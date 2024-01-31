@@ -11,7 +11,7 @@ from aws_cdk import Duration, RemovalPolicy, Stack
 from cddo.utils import constants as cnst
 from cddo.utils import lambdas
 
-from stacks.constants import LL_CDDO_UTILS, LL_REQUESTS
+from stacks.constants import LL_CDDO_UTILS, LL_REQUESTS, PS_SALESFORCE_LAST_CHECKED
 
 layers = {}
 
@@ -69,9 +69,9 @@ def _create_lambda_task(
 
 
 def create_queue_consume_state_machine(
-    stack: cdk.Stack, secret_arns: List[str]
+    stack: cdk.Stack, secret_arns: List[str], json_bucket_arn: str
 ) -> sfn.StateMachine:
-    _get_lambda_layers(stack, [LL_REQUESTS, LL_CDDO_UTILS])
+    _get_lambda_layers(stack, [LL_CDDO_UTILS, LL_REQUESTS])
 
     state_machine_name = "SendSalesforceUpdatesToDNSWatch"
 
@@ -94,16 +94,36 @@ def create_queue_consume_state_machine(
             sid="SecretAccess",
         )
     )
+
     policy_statements.append(
         iam.PolicyStatement(
             actions=[
                 "ssm:GetParameter",
             ],
             effect=iam.Effect.ALLOW,
-            resources=[secret_arns[1]],
-            sid="ParamsAccess",
+            resources=secret_arns[1:],
+            sid="ParamsGet",
         )
     )
+
+    policy_statements.append(
+        iam.PolicyStatement(
+            actions=[
+                "ssm:PutParameter",
+            ],
+            effect=iam.Effect.ALLOW,
+            resources=[secret_arns[1]],
+            sid="ParamsPut",
+        )
+    )
+    ps = iam.PolicyStatement(
+        actions=["s3:PutObject"],
+        effect=iam.Effect.ALLOW,
+        resources=[f"{json_bucket_arn}/*"],
+        sid="S3BucketPut",
+    )
+
+    policy_statements.append(ps)
 
     task_start_sf_update = _create_lambda_task(
         stack=stack,

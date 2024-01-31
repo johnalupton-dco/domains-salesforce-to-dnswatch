@@ -17,6 +17,7 @@ requests = "^2.31.0"
 flake8 = "^7.0.0"
 black = "^23.12.1"
 isort = "^5.13.2"
+simple-salesforce = "^1.12.5"
 
 [build-system]
 requires = ["poetry-core"]
