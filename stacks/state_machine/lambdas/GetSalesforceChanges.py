@@ -1,36 +1,32 @@
 import datetime
-from typing import Dict, Any
+from typing import Dict, Any, List
 import json
 
 import boto3
 import requests
 
-# logging
-# client
-# get secrets
+from cddo.utils.constants import (
+    SALESFORCE_API_VERSION,
+    FROM_SALESFORCE_FILESTUB,
+    PS_SALESFORCE_DOMAIN,
+    PS_SALESFORCE_CLIENT_ID,
+    PS_SALESFORCE_CLIENT_SECRET,
+    PS_SALESFORCE_EVENT_ROOT,
+    PS_SALESFORCE_LAST_CHECKED,
+    PS_UPDATES_FROM_SALESFORCE_BUCKET,
+    FLD_ACCOUNT,
+    FLD_DOMAIN_RELATION,
+    FLD_ORPHAN_ACCOUNT,
+    FLD_SALESFORCE_CHANGE_FILES,
+)
 
 
 ssm_client = boto3.client("ssm")
 secrets_client = boto3.client("secretsmanager")
 s3_client = boto3.client("s3")
 
-SALESFORCE_API_VERSION = "59.0"
-FROM_SALESFORCE_FILESTUB = "update-from-salesforce"
-
 
 TIMEOUT = 20
-
-
-PS_SALESFORCE_DOMAIN = "sf-domain"
-PS_SALESFORCE_CLIENT_ID = "sf-client-id"
-PS_SALESFORCE_CLIENT_SECRET = "sf-client-secret"
-PS_SALESFORCE_EVENT_ROOT = "SalesforceToDNSWatch"
-PS_SALESFORCE_SALESFORCE_LAST_CHECKED = "sf-last-checked-datetime"
-PS_UPDATES_FROM_SALESFORCE_BUCKET = "updates-from-salesforce-bucket"
-
-FLD_ACCOUNT = "account"
-FLD_DOMAIN_RELATION = "domainRelation"
-FLD_ORPHAN_ACCOUNT = "orphanAccount"
 
 
 work = dict()
@@ -50,9 +46,7 @@ OUTPUT_BUCKET = ssm_client.get_parameter(
     Name=f"/{PS_SALESFORCE_EVENT_ROOT}/{PS_UPDATES_FROM_SALESFORCE_BUCKET}"
 )["Parameter"]["Value"]
 
-LAST_CHECKED_KEY = (
-    f"/{PS_SALESFORCE_EVENT_ROOT}/{PS_SALESFORCE_SALESFORCE_LAST_CHECKED}"
-)
+LAST_CHECKED_KEY = f"/{PS_SALESFORCE_EVENT_ROOT}/{PS_SALESFORCE_LAST_CHECKED}"
 
 
 def date_now_as_sf_str() -> str:
@@ -64,11 +58,13 @@ def get_key(query_entity: str, now: str, file_count: int) -> str:
 
 
 def put_file(data: Dict[str, Any], query_entity: str, now: str, file_count: int) -> str:
+    file_name = get_key(now=now, query_entity=query_entity, file_count=file_count)
     s3_client.put_object(
         Body=json.dumps(data),
         Bucket=OUTPUT_BUCKET,
-        Key=get_key(now=now, query_entity=query_entity, file_count=file_count),
+        Key=file_name,
     )
+    return file_name
 
 
 def get_updates_from_query(
@@ -77,23 +73,27 @@ def get_updates_from_query(
     now: str,
     query: str,
     query_entity: str,
-):
+) -> List[str]:
     url = f"https://{domain}.my.salesforce.com/services/data/v{SALESFORCE_API_VERSION}/query"
     params = {"q": f"{query} AND LastModifiedDate <= {now}"}
 
     response = requests.get(url=url, params=params, headers=headers, timeout=TIMEOUT)
     response_data = json.loads(response.content)
 
+    files_written = []
+
     if "errorCode" in response_data:
         print(json.dumps(json.loads(response.content), indent=2, default=str))
     else:
         if response_data["totalSize"] != 0:
             file_count = 1
-            put_file(
-                data=response_data,
-                now=now,
-                query_entity=query_entity,
-                file_count=file_count,
+            files_written.append(
+                put_file(
+                    data=response_data,
+                    now=now,
+                    query_entity=query_entity,
+                    file_count=file_count,
+                )
             )
 
             while "nextRecordsUrl" in response_data:
@@ -105,14 +105,17 @@ def get_updates_from_query(
                 response_data = json.loads(response.content)
 
                 file_count = file_count + 1
-                put_file(
-                    data=response_data,
-                    now=now,
-                    query_entity=query_entity,
-                    file_count=file_count,
+                files_written.append(
+                    put_file(
+                        data=response_data,
+                        now=now,
+                        query_entity=query_entity,
+                        file_count=file_count,
+                    )
                 )
 
         print(f"{response_data['totalSize']} records retrieved")
+    return files_written
 
 
 def lambda_handler(event, _context):
@@ -156,14 +159,16 @@ def lambda_handler(event, _context):
     }
 
     now = date_now_as_sf_str()
+    files_written = []
     for query_entity, query in work.items():
-        get_updates_from_query(
+        files_written = files_written + get_updates_from_query(
             domain=domain,
             headers=headers,
             now=now,
             query=f"{query} LastModifiedDate > {salesforce_last_checked_datetime[query_entity]}",
             query_entity=query_entity,
         )
+
         salesforce_last_checked_datetime[query_entity] = now
 
     ssm_client.put_parameter(
@@ -172,3 +177,5 @@ def lambda_handler(event, _context):
         Type="String",
         Overwrite=True,
     )
+
+    return {FLD_SALESFORCE_CHANGE_FILES: files_written}

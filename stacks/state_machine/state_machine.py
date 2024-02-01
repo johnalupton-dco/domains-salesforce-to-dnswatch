@@ -11,7 +11,8 @@ from aws_cdk import Duration, RemovalPolicy, Stack
 from cddo.utils import constants as cnst
 from cddo.utils import lambdas
 
-from stacks.constants import LL_CDDO_UTILS, LL_REQUESTS
+from stacks.constants import LL_CDDO_UTILS
+from cddo.utils.constants import LL_REQUESTS
 
 layers = {}
 
@@ -132,27 +133,40 @@ def create_queue_consume_state_machine(
         policy_statements=policy_statements,
     )
 
-    task_check_sf_update_status = _create_lambda_task(
-        stack=stack,
-        task_name="CheckSalesforceUpdateStatus",
-        description="Check status of Salesforce update",
+    policy_statements = []
+    policy_statements.append(
+        iam.PolicyStatement(
+            actions=[
+                "ssm:GetParameter",
+            ],
+            effect=iam.Effect.ALLOW,
+            resources=secret_arns[1:],
+            sid="ParamsGet",
+        )
     )
+
+    policy_statements.append(
+        iam.PolicyStatement(
+            actions=[
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:CopyObject",
+                "s3:DeleteObject",
+            ],
+            effect=iam.Effect.ALLOW,
+            resources=[f"{json_bucket_arn}/*"],
+            sid="S3BucketPut",
+        )
+    )
+
     task_complete_sf_update = _create_lambda_task(
         stack=stack,
         task_name="FinaliseSalesforceUpdate",
         description="Finalise Salesforce update",
+        policy_statements=policy_statements,
     )
 
-    definition = task_start_sf_update.next(task_check_sf_update_status).next(
-        sfn.Choice(stack, id="HasSalesforceUpdateCompleted")
-        .when(
-            sfn.Condition.not_(
-                sfn.Condition.string_equals("$.SalesforceUpdateStatus.status", "ok")
-            ),
-            wait_x_mins.next(task_check_sf_update_status),
-        )
-        .otherwise(task_complete_sf_update)
-    )
+    definition = task_start_sf_update.next(task_complete_sf_update)
 
     log_group = logs.LogGroup(
         stack,

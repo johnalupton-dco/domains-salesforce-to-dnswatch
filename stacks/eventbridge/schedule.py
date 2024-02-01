@@ -4,7 +4,6 @@ import aws_cdk.aws_sns as sns
 import aws_cdk.aws_stepfunctions as stepfunctions
 from aws_cdk import Stack
 from aws_cdk import aws_iam as iam
-from cddo.utils.lambdas import create_lambda
 
 
 def create_schedule(

@@ -4,9 +4,11 @@ import aws_cdk as cdk
 from aws_cdk import Stack
 from constructs import Construct
 
-from stacks.constants import (FLD_CONTEXT_SALESFORCE,
-                              FLD_CONTEXT_SCHEDULE_EXPRESSION,
-                              FLD_CONTEXT_UPDATES_FROM_SF_BUCKET)
+from stacks.constants import (
+    FLD_CONTEXT_SALESFORCE,
+    FLD_CONTEXT_SCHEDULE_EXPRESSION,
+    FLD_CONTEXT_UPDATES_FROM_SF_BUCKET,
+)
 from stacks.eventbridge import create_schedule
 from stacks.json_bucket import create_s3_bucket
 from stacks.ssm_and_secrets import create_secrets_and_params

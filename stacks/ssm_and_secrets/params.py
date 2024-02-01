@@ -5,14 +5,22 @@ from aws_cdk import RemovalPolicy, SecretValue, Stack
 from aws_cdk import aws_secretsmanager as sm
 from aws_cdk import aws_ssm as ssm
 
-from stacks.constants import (FLD_ACCOUNT, FLD_CONTEXT_SALESFORCE_CONSUMER_KEY,
-                              FLD_CONTEXT_SALESFORCE_CONSUMER_SECRET,
-                              FLD_CONTEXT_SF_DOMAIN, FLD_DOMAIN_RELATION,
-                              FLD_ORPHAN_ACCOUNT, PS_SALESFORCE_CLIENT_ID,
-                              PS_SALESFORCE_CLIENT_SECRET,
-                              PS_SALESFORCE_DOMAIN, PS_SALESFORCE_EVENT_ROOT,
-                              PS_SALESFORCE_LAST_CHECKED,
-                              PS_UPDATES_FROM_SALESFORCE_BUCKET)
+from stacks.constants import (
+    FLD_CONTEXT_SALESFORCE_CONSUMER_KEY,
+    FLD_CONTEXT_SALESFORCE_CONSUMER_SECRET,
+    FLD_CONTEXT_SF_DOMAIN,
+)
+from cddo.utils.constants import (
+    FLD_ACCOUNT,
+    FLD_DOMAIN_RELATION,
+    FLD_ORPHAN_ACCOUNT,
+    PS_SALESFORCE_CLIENT_ID,
+    PS_SALESFORCE_CLIENT_SECRET,
+    PS_SALESFORCE_DOMAIN,
+    PS_SALESFORCE_EVENT_ROOT,
+    PS_SALESFORCE_LAST_CHECKED,
+    PS_UPDATES_FROM_SALESFORCE_BUCKET,
+)
 
 
 def _set_secret(
