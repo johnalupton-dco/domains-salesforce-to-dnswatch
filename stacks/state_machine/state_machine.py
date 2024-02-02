@@ -5,6 +5,8 @@ import aws_cdk.aws_iam as iam
 import aws_cdk.aws_lambda as lambda_
 import aws_cdk.aws_logs as logs
 import aws_cdk.aws_s3 as s3
+import aws_cdk.aws_ec2 as ec2
+import aws_cdk.aws_ecs as ecs
 import aws_cdk.aws_stepfunctions as sfn
 import aws_cdk.aws_stepfunctions_tasks as tasks
 from aws_cdk import Duration, RemovalPolicy, Stack
@@ -38,6 +40,49 @@ def _get_lambda_layers(
         )
 
     return layers
+
+
+def _create_fargate_task() -> tasks.EcsFargateLaunchTarget:
+    vpc = ec2.Vpc.from_lookup(self, "Vpc", is_default=True)
+
+    cluster = ecs.Cluster(self, "FargateCluster", vpc=vpc)
+
+    task_definition = ecs.TaskDefinition(
+        self,
+        "TD",
+        memory_mi_b="512",
+        cpu="256",
+        compatibility=ecs.Compatibility.FARGATE,
+    )
+
+    container_definition = task_definition.add_container(
+        "TheContainer",
+        image=ecs.ContainerImage.from_registry("f"),
+        memory_limit_mi_b=256,
+    )
+
+    run_task = tasks.EcsRunTask(
+        self,
+        "RunFargate",
+        integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+        cluster=cluster,
+        task_definition=task_definition,
+        assign_public_ip=True,
+        container_overrides=[
+            tasks.ContainerOverride(
+                container_definition=container_definition,
+                environment=[
+                    tasks.TaskEnvironmentVariable(
+                        name="SOME_KEY", value=sfn.JsonPath.string_at("$.SomeKey")
+                    )
+                ],
+            )
+        ],
+        launch_target=tasks.EcsFargateLaunchTarget(),
+        propagated_tag_source=ecs.PropagatedTagSource.TASK_DEFINITION,
+    )
+
+    return run_task
 
 
 def _create_lambda_task(

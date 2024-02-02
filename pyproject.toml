@@ -25,5 +25,5 @@ build-backend = "poetry.core.masonry.api"
 
 [[tool.poetry.source]]
 name = "artifact"
-url = "https://cddo-637696396477.d.codeartifact.eu-north-1.amazonaws.com/pypi/cddo-utils/simple"
+url = "https://cddo-047916624712.d.codeartifact.eu-west-2.amazonaws.com/pypi/cddo-utils/simple"
 priority = "supplemental"

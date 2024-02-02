@@ -82,8 +82,9 @@ def get_updates_from_query(
 
     files_written = []
 
-    if "errorCode" in response_data:
+    if type(response_data) is list and "errorCode" in response_data[0]:
         print(json.dumps(json.loads(response.content), indent=2, default=str))
+        raise
     else:
         if response_data["totalSize"] != 0:
             file_count = 1
@@ -119,21 +120,11 @@ def get_updates_from_query(
 
 
 def lambda_handler(event, _context):
-    salesforce_last_checked_datetime = {
-        FLD_ACCOUNT: "2024-01-01T00:00:00Z",
-        FLD_DOMAIN_RELATION: "2024-01-01T00:00:00Z",
-        FLD_ORPHAN_ACCOUNT: "2024-01-01T00:00:00Z",
-    }
-    ssm_client.put_parameter(
-        Name=LAST_CHECKED_KEY,
-        Value=json.dumps(salesforce_last_checked_datetime),
-        Type="String",
-        Overwrite=True,
-    )
-
     salesforce_last_checked_datetime = json.loads(
         ssm_client.get_parameter(Name=LAST_CHECKED_KEY)["Parameter"]["Value"]
     )
+
+    print(json.dumps(salesforce_last_checked_datetime, indent=2, default=str))
 
     secret_value = json.loads(
         secrets_client.get_secret_value(SecretId=PS_SALESFORCE_EVENT_ROOT)[
@@ -159,8 +150,10 @@ def lambda_handler(event, _context):
     }
 
     now = date_now_as_sf_str()
+    print(f"Collecting data at {now}")
     files_written = []
     for query_entity, query in work.items():
+        print(f"Processing {query_entity}")
         files_written = files_written + get_updates_from_query(
             domain=domain,
             headers=headers,
