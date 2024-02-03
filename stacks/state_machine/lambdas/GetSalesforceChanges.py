@@ -24,6 +24,7 @@ from cddo.utils.constants import (
 ssm_client = boto3.client("ssm")
 secrets_client = boto3.client("secretsmanager")
 s3_client = boto3.client("s3")
+ddb_client = boto3.client("dynamodb")
 
 
 TIMEOUT = 20
@@ -86,6 +87,20 @@ def get_updates_from_query(
         print(json.dumps(json.loads(response.content), indent=2, default=str))
         raise
     else:
+        ddb_client.put_item(
+            TableName=query_entity,
+            Item={
+                "as_at_datetime": {
+                    "S": str(
+                        datetime.datetime.fromisoformat(
+                            now.replace("T", " ")
+                        ).timestamp()
+                    )
+                },
+                "records": {"N": str(response_data["totalSize"])},
+            },
+        )
+
         if response_data["totalSize"] != 0:
             file_count = 1
             files_written.append(

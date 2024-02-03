@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional
 
+
+import aws_cdk.aws_dynamodb as ddb
 import aws_cdk as cdk
 import aws_cdk.aws_iam as iam
 import aws_cdk.aws_lambda as lambda_
@@ -104,18 +106,24 @@ def _create_lambda_task(
         for p in policy_statements:
             lambda_function.add_to_role_policy(p)
 
-    return tasks.LambdaInvoke(
-        payload_response_only=True,
-        scope=stack,
-        id=task_name,
-        state_name=task_name,
-        retry_on_service_exceptions=False,
-        lambda_function=lambda_function,
+    return (
+        tasks.LambdaInvoke(
+            payload_response_only=True,
+            scope=stack,
+            id=task_name,
+            state_name=task_name,
+            retry_on_service_exceptions=False,
+            lambda_function=lambda_function,
+        ),
+        lambda_function,
     )
 
 
 def create_queue_consume_state_machine(
-    stack: cdk.Stack, secret_arns: List[str], json_bucket_arn: str
+    stack: cdk.Stack,
+    secret_arns: List[str],
+    json_bucket_arn: str,
+    tables: List[ddb.TableV2],
 ) -> sfn.StateMachine:
     _get_lambda_layers(stack, [LL_CDDO_UTILS, LL_REQUESTS])
 
@@ -171,12 +179,15 @@ def create_queue_consume_state_machine(
 
     policy_statements.append(ps)
 
-    task_start_sf_update = _create_lambda_task(
+    task_start_sf_update, fn = _create_lambda_task(
         stack=stack,
         task_name="GetSalesforceChanges",
         description="Query Salesforce with REST API to find updated data",
         policy_statements=policy_statements,
     )
+
+    for t in tables:
+        t.grant_write_data(fn)
 
     policy_statements = []
     policy_statements.append(
@@ -204,7 +215,7 @@ def create_queue_consume_state_machine(
         )
     )
 
-    task_complete_sf_update = _create_lambda_task(
+    task_complete_sf_update, _ = _create_lambda_task(
         stack=stack,
         task_name="FinaliseSalesforceUpdate",
         description="Finalise Salesforce update",

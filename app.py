@@ -8,11 +8,13 @@ from stacks.constants import (
     FLD_CONTEXT_SALESFORCE,
     FLD_CONTEXT_SCHEDULE_EXPRESSION,
     FLD_CONTEXT_UPDATES_FROM_SF_BUCKET,
+    FLD_CONTEXT_ENVIRONMENT_NAME
 )
 from stacks.eventbridge import create_schedule
 from stacks.json_bucket import create_s3_bucket
 from stacks.ssm_and_secrets import create_secrets_and_params
 from stacks.state_machine import create_queue_consume_state_machine
+from stacks.dynamodb import create_dynamodb_tables
 
 
 class ToDNSWatch(Stack):
@@ -36,8 +38,10 @@ class ToDNSWatch(Stack):
             stack=self, bucket_name=from_salesforce_bucket_name
         )
 
+        tables= create_dynamodb_tables(stack=self)
+
         sm = create_queue_consume_state_machine(
-            stack=self, secret_arns=secret_arns, json_bucket_arn=json_bucket.bucket_arn
+            stack=self, secret_arns=secret_arns, json_bucket_arn=json_bucket.bucket_arn, tables=tables
         )
 
         create_schedule(
@@ -52,9 +56,11 @@ ToDNSWatch(
     app,
     "ToDNSWatch",
     salesforce_context=app.node.get_context(FLD_CONTEXT_SALESFORCE),
-    from_salesforce_bucket_name=app.node.get_context(
+    from_salesforce_bucket_name=f"{app.node.get_context(
         FLD_CONTEXT_UPDATES_FROM_SF_BUCKET
-    ),
+    )}-{app.node.get_context(
+        FLD_CONTEXT_ENVIRONMENT_NAME
+    )}",
 )
 
 app.synth()
