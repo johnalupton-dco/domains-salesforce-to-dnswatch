@@ -1,4 +1,5 @@
 import datetime
+import time
 from typing import Dict, Any, List
 import json
 
@@ -84,8 +85,8 @@ def get_updates_from_query(
     files_written = []
 
     if type(response_data) is list and "errorCode" in response_data[0]:
-        print(json.dumps(json.loads(response.content), indent=2, default=str))
-        raise
+        print(json.dumps(response_data, indent=2, default=str))
+        raise RuntimeError(response_data)
     else:
         ddb_client.put_item(
             TableName=query_entity,
@@ -165,6 +166,8 @@ def lambda_handler(event, _context):
     }
 
     now = date_now_as_sf_str()
+    # sleep to ensure no records missed at the snapshot time
+    time.sleep(2)
     print(f"Collecting data at {now}")
     files_written = []
     for query_entity, query in work.items():
