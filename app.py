@@ -1,4 +1,5 @@
 from typing import Any, Dict
+import os
 
 import aws_cdk as cdk
 from aws_cdk import Stack
@@ -61,6 +62,9 @@ ToDNSWatch(
     )}-{app.node.get_context(
         FLD_CONTEXT_ENVIRONMENT_NAME
     )}",
+    env=cdk.Environment(
+    account=os.environ["CDK_DEFAULT_ACCOUNT"],
+    region=os.environ["CDK_DEFAULT_REGION"])
 )
 
 app.synth()

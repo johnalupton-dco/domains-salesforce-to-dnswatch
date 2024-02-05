@@ -189,4 +189,4 @@ def lambda_handler(event, _context):
         Overwrite=True,
     )
 
-    return {FLD_SALESFORCE_CHANGE_FILES: files_written}
+    return {FLD_SALESFORCE_CHANGE_FILES: json.dumps(files_written)}

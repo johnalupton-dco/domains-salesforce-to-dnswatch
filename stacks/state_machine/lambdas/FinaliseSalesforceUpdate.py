@@ -1,4 +1,5 @@
 import boto3
+import json
 
 
 from cddo.utils.constants import (
@@ -17,7 +18,9 @@ OUTPUT_BUCKET = ssm_client.get_parameter(
 
 def lambda_handler(event, _context):
     s3 = boto3.resource("s3")
-    for k in event[FLD_SALESFORCE_CHANGE_FILES]:
+    input_files = json.loads(event[FLD_SALESFORCE_CHANGE_FILES])
+
+    for k in input_files:
         s3.Object(OUTPUT_BUCKET, f"archive/{k}").copy_from(
             CopySource=f"{OUTPUT_BUCKET}/{k}"
         )
