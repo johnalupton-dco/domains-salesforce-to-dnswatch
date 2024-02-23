@@ -1,50 +1,66 @@
-from typing import Any, Dict
 import os
+from typing import Any, Dict
 
 import aws_cdk as cdk
 from aws_cdk import Stack
 from constructs import Construct
 
-from stacks.constants import (
-    FLD_CONTEXT_SALESFORCE,
-    FLD_CONTEXT_SCHEDULE_EXPRESSION,
-    FLD_CONTEXT_UPDATES_FROM_SF_BUCKET,
-    FLD_CONTEXT_ENVIRONMENT_NAME
-)
+from stacks.constants import (FLD_CONTEXT_PROFILE,
+                              FLD_CONTEXT_SCHEDULE_EXPRESSION,
+                              FLD_CONTEXT_UPDATES_FROM_SF_BUCKET)
+from stacks.dynamodb import create_dynamodb_tables
 from stacks.eventbridge import create_schedule
 from stacks.json_bucket import create_s3_bucket
 from stacks.ssm_and_secrets import create_secrets_and_params
 from stacks.state_machine import create_queue_consume_state_machine
-from stacks.dynamodb import create_dynamodb_tables
 
 
 class ToDNSWatch(Stack):
+    """
+    1. Create secrets for salesforce access and parameter for "last updated" variables
+    2. Create s3 bucket to put json files extracted from salesforce
+    3. Create dynamodb tables to store import stats (number of records of each type pulled from salesforce)
+    4. Create state machine to pull data from salesforce to DNSWatch - steps are:
+     * State 1: GetSalesforceChanges - lambda function to call salesforce api to get changes and save them to json files
+     * State 2: domains-dnswatch-bulk-update-from-salesforce - farget task to process files
+     * State 3: FinaliseSalesforceUpdate - lambda to archive processed files
+    """
+
     def __init__(
         self,
         scope: Construct,
         construct_id: str,
-        salesforce_context: Dict[str, Any],
+        context: Dict[str, Any],
         from_salesforce_bucket_name: str,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        secret_arns = create_secrets_and_params(
+        # ARNs for secrets and parameters - needed to grant permissions to lambda functions for read/write
+        salesforce_secret, last_checked_param = create_secrets_and_params(
             stack=self,
-            salesforce_context=salesforce_context,
-            from_salesforce_bucket_name=from_salesforce_bucket_name,
+            context=context,
         )
 
-        json_bucket = create_s3_bucket(
+        # Bucket to put data read from salesforce REST API
+        from_salesforce_bucket = create_s3_bucket(
             stack=self, bucket_name=from_salesforce_bucket_name
         )
 
-        tables= create_dynamodb_tables(stack=self)
+        # dynamodb tables to store summary stats of each run
+        tables = create_dynamodb_tables(stack=self)
 
+        # State machine to run all steps in the update run on an EventBridge schedule
         sm = create_queue_consume_state_machine(
-            stack=self, secret_arns=secret_arns, json_bucket_arn=json_bucket.bucket_arn, tables=tables
+            stack=self,
+            from_salesforce_bucket=from_salesforce_bucket,
+            salesforce_secret=salesforce_secret,
+            last_checked_param=last_checked_param,
+            tables=tables,
+            profile=app.node.get_context(FLD_CONTEXT_PROFILE),
         )
 
+        # Eventbridge schedule to run update
         create_schedule(
             stack=self,
             schedule_expression=app.node.get_context(FLD_CONTEXT_SCHEDULE_EXPRESSION),
@@ -53,18 +69,20 @@ class ToDNSWatch(Stack):
 
 
 app = cdk.App()
+
+profile = app.node.get_context(FLD_CONTEXT_PROFILE)
+bucket = app.node.get_context(FLD_CONTEXT_UPDATES_FROM_SF_BUCKET)
+
+
 ToDNSWatch(
     app,
     "ToDNSWatch",
-    salesforce_context=app.node.get_context(FLD_CONTEXT_SALESFORCE),
-    from_salesforce_bucket_name=f"{app.node.get_context(
-        FLD_CONTEXT_UPDATES_FROM_SF_BUCKET
-    )}-{app.node.get_context(
-        FLD_CONTEXT_ENVIRONMENT_NAME
-    )}",
+    context=app.node.get_context(profile),
+    from_salesforce_bucket_name=f"{bucket}-{profile}",
     env=cdk.Environment(
-    account=os.environ["CDK_DEFAULT_ACCOUNT"],
-    region=os.environ["CDK_DEFAULT_REGION"])
+        account=os.environ.get("CDK_DEPLOY_ACCOUNT", os.environ["CDK_DEFAULT_ACCOUNT"]),
+        region=os.environ.get("CDK_DEPLOY_REGION", os.environ["CDK_DEFAULT_REGION"]),
+    ),
 )
 
 app.synth()

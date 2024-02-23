@@ -1,26 +1,23 @@
 import datetime
-import time
-from typing import Dict, Any, List
 import json
+import os
+import time
+from typing import Any, Dict, List
 
 import boto3
 import requests
-
-from cddo.utils.constants import (
-    SALESFORCE_API_VERSION,
-    FROM_SALESFORCE_FILESTUB,
-    PS_SALESFORCE_DOMAIN,
-    PS_SALESFORCE_CLIENT_ID,
-    PS_SALESFORCE_CLIENT_SECRET,
-    PS_SALESFORCE_EVENT_ROOT,
-    PS_SALESFORCE_LAST_CHECKED,
-    PS_UPDATES_FROM_SALESFORCE_BUCKET,
-    FLD_ACCOUNT,
-    FLD_DOMAIN_RELATION,
-    FLD_ORPHAN_ACCOUNT,
-    FLD_SALESFORCE_CHANGE_FILES,
-)
-
+from cddo.utils.constants import (ENV_UPDATE_FROM_SALESFORCE_BUCKET,
+                                  FLD_DOMAIN_RELATION, FLD_ORGANISATION,
+                                  FLD_ORPHAN_ORGANISATION,
+                                  FLD_SALESFORCE_CHANGE_FILES,
+                                  FROM_SALESFORCE_FILESTUB,
+                                  PS_SALESFORCE_CLIENT_ID,
+                                  PS_SALESFORCE_CLIENT_SECRET,
+                                  PS_SALESFORCE_DOMAIN,
+                                  PS_SALESFORCE_EVENT_ROOT,
+                                  PS_SALESFORCE_LAST_CHECKED,
+                                  SALESFORCE_API_VERSION)
+from cddo.utils.salesforce import get_access_token, query_to_df
 
 ssm_client = boto3.client("ssm")
 secrets_client = boto3.client("secretsmanager")
@@ -29,24 +26,22 @@ ddb_client = boto3.client("dynamodb")
 
 
 TIMEOUT = 20
+OUTPUT_BUCKET = os.environ[ENV_UPDATE_FROM_SALESFORCE_BUCKET]
 
 
 work = dict()
 work[
-    FLD_ACCOUNT
+    FLD_ORGANISATION
 ] = "select Id, Name,Description,Sector__c,Status__c,Type, CreatedDate, LastModifiedDate from Account where"
 work[
     FLD_DOMAIN_RELATION
-] = "select Id, Name, Organisation__c, Parent_domain__c, Public_suffix__c, Organisation__r.Id, Organisation__r.Name from Domain__c where"
+] = "select Id, Name, Organisation__c, Parent_domain__c, Public_suffix__c, Organisation__r.Id, Organisation__r.Name \
+    from Domain__c where"
 
 work[
-    FLD_ORPHAN_ACCOUNT
+    FLD_ORPHAN_ORGANISATION
 ] = "SELECT Id, Name FROM Account WHERE Id NOT IN (SELECT Organisation__c FROM Domain__c) and"
 
-
-OUTPUT_BUCKET = ssm_client.get_parameter(
-    Name=f"/{PS_SALESFORCE_EVENT_ROOT}/{PS_UPDATES_FROM_SALESFORCE_BUCKET}"
-)["Parameter"]["Value"]
 
 LAST_CHECKED_KEY = f"/{PS_SALESFORCE_EVENT_ROOT}/{PS_SALESFORCE_LAST_CHECKED}"
 
@@ -78,6 +73,7 @@ def get_updates_from_query(
 ) -> List[str]:
     url = f"https://{domain}.my.salesforce.com/services/data/v{SALESFORCE_API_VERSION}/query"
     params = {"q": f"{query} AND LastModifiedDate <= {now}"}
+    print(f"{query} AND LastModifiedDate <= {now}")
 
     response = requests.get(url=url, params=params, headers=headers, timeout=TIMEOUT)
     response_data = json.loads(response.content)
@@ -135,7 +131,20 @@ def get_updates_from_query(
     return files_written
 
 
-def lambda_handler(event, _context):
+def lambda_handlerX(event, _context):
+    ssm_client.put_parameter(
+        Name=LAST_CHECKED_KEY,
+        Value=json.dumps(
+            {
+                "organisation": "2023-01-01T00:00:01.000000+00:00",
+                "domainRelation": "2023-01-01T00:00:01.000000+00:00",
+                "orphanOrganisation": "2023-01-01T00:00:01.000000+00:00",
+            }
+        ),
+        Type="String",
+        Overwrite=True,
+    )
+
     salesforce_last_checked_datetime = json.loads(
         ssm_client.get_parameter(Name=LAST_CHECKED_KEY)["Parameter"]["Value"]
     )
@@ -169,10 +178,10 @@ def lambda_handler(event, _context):
     # sleep to ensure no records missed at the snapshot time
     time.sleep(2)
     print(f"Collecting data at {now}")
-    files_written = []
+    files_written = dict()
     for query_entity, query in work.items():
         print(f"Processing {query_entity}")
-        files_written = files_written + get_updates_from_query(
+        files_written[query_entity] = get_updates_from_query(
             domain=domain,
             headers=headers,
             now=now,
@@ -189,4 +198,85 @@ def lambda_handler(event, _context):
         Overwrite=True,
     )
 
-    return {FLD_SALESFORCE_CHANGE_FILES: json.dumps(files_written)}
+    return {
+        ENV_UPDATE_FROM_SALESFORCE_BUCKET: OUTPUT_BUCKET,
+        FLD_SALESFORCE_CHANGE_FILES: json.dumps(files_written),
+    }
+
+
+def lambda_handler(_event, _context):
+    ssm_client.put_parameter(
+        Name=LAST_CHECKED_KEY,
+        Value=json.dumps(
+            {
+                "organisation": "2023-01-01T00:00:01.000000+00:00",
+                "domainRelation": "2023-01-01T00:00:01.000000+00:00",
+                "orphanOrganisation": "2023-01-01T00:00:01.000000+00:00",
+            }
+        ),
+        Type="String",
+        Overwrite=True,
+    )
+
+    salesforce_last_checked_datetime = json.loads(
+        ssm_client.get_parameter(Name=LAST_CHECKED_KEY)["Parameter"]["Value"]
+    )
+
+    print(json.dumps(salesforce_last_checked_datetime, indent=2, default=str))
+
+    domain, access_token = get_access_token(PS_SALESFORCE_EVENT_ROOT)
+
+    now = date_now_as_sf_str()
+    # sleep to ensure no records missed at the snapshot time
+    time.sleep(2)
+
+    print(f"Collecting data at {now}")
+
+    files_written = dict()
+    for query_entity, query in work.items():
+        print(f"Processing {query_entity}")
+
+        query = f"{query} LastModifiedDate > {salesforce_last_checked_datetime[query_entity]}"
+
+        df = query_to_df(query=query, domain=domain, access_token=access_token)
+
+        ddb_client.put_item(
+            TableName=query_entity,
+            Item={
+                "as_at_datetime": {
+                    "S": str(
+                        datetime.datetime.fromisoformat(
+                            now.replace("T", " ")
+                        ).timestamp()
+                    )
+                },
+                "records": {"N": str(len(df))},
+            },
+        )
+
+        if len(df) != 0:
+            df.columns = [x.lower() for x in df.columns]
+
+        key = f"{FROM_SALESFORCE_FILESTUB}-{query_entity}-{now}.csv"
+
+        s3_client.put_object(
+            Body=df.to_csv(encoding="utf-8", index=False, lineterminator="\n"),
+            Bucket=OUTPUT_BUCKET,
+            Key=key,
+        )
+
+        files_written[query_entity] = key
+
+        salesforce_last_checked_datetime[query_entity] = now
+
+    ssm_client.put_parameter(
+        Name=LAST_CHECKED_KEY,
+        Value=json.dumps(salesforce_last_checked_datetime),
+        Type="String",
+        Overwrite=True,
+    )
+
+    return {
+        ENV_UPDATE_FROM_SALESFORCE_BUCKET: OUTPUT_BUCKET,
+        FLD_SALESFORCE_CHANGE_FILES: json.dumps(files_written),
+    }

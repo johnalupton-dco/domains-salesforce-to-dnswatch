@@ -1,35 +1,29 @@
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from aws_cdk import RemovalPolicy, SecretValue, Stack
 from aws_cdk import aws_secretsmanager as sm
 from aws_cdk import aws_ssm as ssm
+from cddo.utils.constants import (FLD_DOMAIN_RELATION, FLD_ORGANISATION,
+                                  FLD_ORPHAN_ORGANISATION,
+                                  PS_SALESFORCE_CLIENT_ID,
+                                  PS_SALESFORCE_CLIENT_SECRET,
+                                  PS_SALESFORCE_DOMAIN,
+                                  PS_SALESFORCE_EVENT_ROOT,
+                                  PS_SALESFORCE_LAST_CHECKED)
 
-from stacks.constants import (
-    FLD_CONTEXT_SALESFORCE_CONSUMER_KEY,
-    FLD_CONTEXT_SALESFORCE_CONSUMER_SECRET,
-    FLD_CONTEXT_SF_DOMAIN,
-)
-from cddo.utils.constants import (
-    FLD_ACCOUNT,
-    FLD_DOMAIN_RELATION,
-    FLD_ORPHAN_ACCOUNT,
-    PS_SALESFORCE_CLIENT_ID,
-    PS_SALESFORCE_CLIENT_SECRET,
-    PS_SALESFORCE_DOMAIN,
-    PS_SALESFORCE_EVENT_ROOT,
-    PS_SALESFORCE_LAST_CHECKED,
-    PS_UPDATES_FROM_SALESFORCE_BUCKET,
-)
+from stacks.constants import (FLD_CONTEXT_SALESFORCE_CONSUMER_KEY,
+                              FLD_CONTEXT_SALESFORCE_CONSUMER_SECRET,
+                              FLD_CONTEXT_SF_DOMAIN)
 
 
-def _set_secret(
+def set_secret(
     stack: Stack,
     key_root: str,
     value: Union[str, Dict[str, str]],
     description: str,
     secret_name: Optional[str] = None,
-) -> str:
+) -> sm.Secret:
     if type(value) is str:
         secret_full_name = f"/{key_root}/{secret_name}"
 
@@ -55,16 +49,16 @@ def _set_secret(
         RemovalPolicy.DESTROY,
     )
 
-    return secret.secret_arn
+    return secret
 
 
-def _set_param(
+def set_param(
     stack: Stack,
     key_root: str,
     parameter_name: str,
     string_value: Union[List[str], str],
     description: str,
-) -> str:
+) -> ssm.IParameter:
     parameter_full_name = f"/{key_root}/{parameter_name}"
     if type(string_value) is list:
         param = ssm.StringListParameter(
@@ -88,52 +82,36 @@ def _set_param(
     param.apply_removal_policy(
         RemovalPolicy.DESTROY,
     )
-    return param.parameter_arn
+    return param
 
 
 def create_secrets_and_params(
-    stack: Stack, salesforce_context: Dict[str, Any], from_salesforce_bucket_name: str
-) -> List[str]:
-    arns = []
-    arns.append(
-        _set_secret(
-            stack=stack,
-            key_root=PS_SALESFORCE_EVENT_ROOT,
-            value={
-                PS_SALESFORCE_CLIENT_ID: salesforce_context[
-                    FLD_CONTEXT_SALESFORCE_CONSUMER_KEY
-                ],
-                PS_SALESFORCE_CLIENT_SECRET: salesforce_context[
-                    FLD_CONTEXT_SALESFORCE_CONSUMER_SECRET
-                ],
-                PS_SALESFORCE_DOMAIN: salesforce_context[FLD_CONTEXT_SF_DOMAIN],
-            },
-            description="Salesforce client id and client_secret to called endpoint",
-        )
+    stack: Stack, context: Dict[str, Any]
+) -> Tuple[sm.Secret, ssm.IParameter]:
+    salesforce_secret = set_secret(
+        stack=stack,
+        key_root=PS_SALESFORCE_EVENT_ROOT,
+        value={
+            PS_SALESFORCE_CLIENT_ID: context[FLD_CONTEXT_SALESFORCE_CONSUMER_KEY],
+            PS_SALESFORCE_CLIENT_SECRET: context[
+                FLD_CONTEXT_SALESFORCE_CONSUMER_SECRET
+            ],
+            PS_SALESFORCE_DOMAIN: context[FLD_CONTEXT_SF_DOMAIN],
+        },
+        description="Salesforce client id and client_secret to called endpoint",
     )
 
-    arns.append(
-        _set_param(
-            stack=stack,
-            key_root=PS_SALESFORCE_EVENT_ROOT,
-            parameter_name=PS_SALESFORCE_LAST_CHECKED,
-            string_value=json.dumps(
-                {
-                    FLD_ACCOUNT: "2024-01-01T00:00:00Z",
-                    FLD_DOMAIN_RELATION: "2024-01-01T00:00:00Z",
-                    FLD_ORPHAN_ACCOUNT: "2024-01-01T00:00:00Z",
-                }
-            ),
-            description="Time of last check for Salesforce updates",
-        )
+    last_checked_param = set_param(
+        stack=stack,
+        key_root=PS_SALESFORCE_EVENT_ROOT,
+        parameter_name=PS_SALESFORCE_LAST_CHECKED,
+        string_value=json.dumps(
+            {
+                FLD_ORGANISATION: "2024-01-01T00:00:00Z",
+                FLD_DOMAIN_RELATION: "2024-01-01T00:00:00Z",
+                FLD_ORPHAN_ORGANISATION: "2024-01-01T00:00:00Z",
+            }
+        ),
+        description="Time of last check for Salesforce updates",
     )
-    arns.append(
-        _set_param(
-            stack=stack,
-            key_root=PS_SALESFORCE_EVENT_ROOT,
-            parameter_name=PS_UPDATES_FROM_SALESFORCE_BUCKET,
-            string_value=from_salesforce_bucket_name,
-            description="Store of all JSON representing updates from salesforce",
-        )
-    )
-    return arns
+    return salesforce_secret, last_checked_param
