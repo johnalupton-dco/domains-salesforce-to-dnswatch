@@ -5,9 +5,11 @@ import aws_cdk as cdk
 from aws_cdk import Stack
 from constructs import Construct
 
-from stacks.constants import (FLD_CONTEXT_PROFILE,
-                              FLD_CONTEXT_SCHEDULE_EXPRESSION,
-                              FLD_CONTEXT_UPDATES_FROM_SF_BUCKET)
+from stacks.constants import (
+    FLD_CONTEXT_PROFILE,
+    FLD_CONTEXT_SCHEDULE_EXPRESSION,
+    FLD_CONTEXT_UPDATES_FROM_SF_BUCKET,
+)
 from stacks.dynamodb import create_dynamodb_tables
 from stacks.eventbridge import create_schedule
 from stacks.json_bucket import create_s3_bucket
@@ -58,6 +60,7 @@ class ToDNSWatch(Stack):
             last_checked_param=last_checked_param,
             tables=tables,
             profile=app.node.get_context(FLD_CONTEXT_PROFILE),
+            context=context,
         )
 
         # Eventbridge schedule to run update

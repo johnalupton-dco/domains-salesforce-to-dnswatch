@@ -17,6 +17,8 @@ from cddo.utils import lambdas
 from cddo.utils.constants import LL_REQUESTS
 
 from stacks.constants import LL_CDDO_UTILS
+from .vpc import get_rds_vpc
+
 
 ENV_UPDATE_FROM_SALESFORCE_BUCKET = "CDDO_UPDATE_FROM_SALESFORCE_BUCKET"
 
@@ -94,6 +96,7 @@ def create_queue_consume_state_machine(
     stack: cdk.Stack,
     tables: List[ddb.TableV2],
     profile: str,
+    context: Dict[str, str],
     from_salesforce_bucket: s3.Bucket,
     salesforce_secret: sm.Secret,
     last_checked_param: ssm.IParameter,
@@ -126,13 +129,35 @@ def create_queue_consume_state_machine(
     for t in tables:
         t.grant_write_data(fn)
 
+    policy_statements = []
+    policy_statements.append(
+        iam.PolicyStatement(
+            actions=[
+                "secretsmanager:GetSecretValue",
+            ],
+            effect=iam.Effect.ALLOW,
+            resources=[
+                "arn:aws:secretsmanager:eu-west-2:047916624712:secret:cddodomainsrdsSecretAEE4019-rYKIctWRKuZZ-jjql3p"
+            ],
+            sid="SecretAccess",
+        )
+    )
+    vpc, security_group, vpc_subnets, environment = get_rds_vpc(
+        stack=stack, context=context
+    )
+
+    environment[ENV_UPDATE_FROM_SALESFORCE_BUCKET] = from_salesforce_bucket.bucket_name
+
     task_complete_sf_update, fn = _create_lambda_task(
         stack=stack,
         task_name="FinaliseSalesforceUpdate",
         description="Finalise Salesforce update",
-        environment={
-            ENV_UPDATE_FROM_SALESFORCE_BUCKET: from_salesforce_bucket.bucket_name
-        },
+        policy_statements=policy_statements,
+        security_groups=[security_group],
+        vpc=vpc,
+        vpc_subnets=vpc_subnets,
+        environment=environment,
+        memory_size=2048,
     )
     from_salesforce_bucket.grant_read_write(fn)
 
