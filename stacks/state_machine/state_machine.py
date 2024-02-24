@@ -58,6 +58,7 @@ def _create_lambda_task(
     vpc_subnets: Optional[Any] = None,
     environment: Dict[str, str] = None,
     memory_size: Optional[int] = 512,
+    timeout: int = 900,
     lambda_function: Optional[lambda_.Function] = None,
 ) -> Tuple[tasks.LambdaInvoke, lambda_.Function]:
     if not lambda_function:
@@ -65,7 +66,7 @@ def _create_lambda_task(
             stack=stack,
             name=task_name,
             description=description,
-            timeout=900,
+            timeout=timeout,
             source_folder="./lambdas",
             create_log_group=True,
             lambda_layers=[l for k, l in layers.items()],
@@ -158,6 +159,7 @@ def create_queue_consume_state_machine(
         vpc_subnets=vpc_subnets,
         environment=environment,
         memory_size=2048,
+        timeout=180,
     )
     from_salesforce_bucket.grant_read_write(fn)
 

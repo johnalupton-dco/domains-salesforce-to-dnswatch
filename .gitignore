@@ -13,3 +13,5 @@ poetry.lock
 todo.md
 cdk.context.json.save
 tmp.*
+*.csv
+*.sh

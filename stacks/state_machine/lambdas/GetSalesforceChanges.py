@@ -34,23 +34,23 @@ OUTPUT_BUCKET = os.environ[ENV_UPDATE_FROM_SALESFORCE_BUCKET]
 
 
 work = dict()
-work[FLD_ORGANISATION] = {
-    "model": "organisation",
-    "renamer": {"external_id__c": "object_id", "id": "salesforce_id"},
-    "query": "select Id, Name,Description,Sector__c,Status__c,Type, CreatedDate, LastModifiedDate,  external_id__c from Account where",
-}
+# work[FLD_ORGANISATION] = {
+#     "model": "organisation",
+#     "renamer": {"external_id__c": "id", "id": "salesforce_id"},
+#     "query": "select Id, Name, external_id__c from Account where",
+# }
 work[FLD_DOMAIN_RELATION] = {
     "model": "domain",
-    "renamer": {"external_id__c": "object_id", "id": "salesforce_id"},
+    "renamer": {"external_id__c": "id", "id": "salesforce_id"},
     "query": "select Id, Name, Organisation__c, Parent_domain__c, Public_suffix__c, Organisation__r.Id, Organisation__r.Name, external_id__c \
     from Domain__c where",
 }
 
-work[FLD_ORPHAN_ORGANISATION] = {
-    "model": "orphan",
-    "renamer": {"external_id__c": "object_id", "id": "salesforce_id"},
-    "query": "SELECT Id, Name, external_id__c FROM Account WHERE Id NOT IN (SELECT Organisation__c FROM Domain__c) and",
-}
+# work[FLD_ORPHAN_ORGANISATION] = {
+#     "model": "orphan",
+#     "renamer": {"external_id__c": "object_id", "id": "salesforce_id"},
+#     "query": "SELECT Id, Name, external_id__c FROM Account WHERE Id NOT IN (SELECT Organisation__c FROM Domain__c) and",
+# }
 
 
 LAST_CHECKED_KEY = f"/{PS_SALESFORCE_EVENT_ROOT}/{PS_SALESFORCE_LAST_CHECKED}"
@@ -269,9 +269,7 @@ def lambda_handler(_event, _context):
             df.columns = [x.lower() for x in df.columns]
             df["model"] = info["model"]
             df = df.rename(columns=info["renamer"])
-            df_lookup = pd.concat(
-                [df_lookup, df[["object_id", "salesforce_id", "model"]]]
-            )
+            df_lookup = pd.concat([df_lookup, df[["id", "salesforce_id", "model"]]])
 
         key = f"{FROM_SALESFORCE_FILESTUB}-{query_entity}.csv"
 
@@ -281,7 +279,7 @@ def lambda_handler(_event, _context):
             Key=key,
         )
 
-        files_written[query_entity] = [key]
+        files_written[info["model"]] = [key]
 
         salesforce_last_checked_datetime[query_entity] = now
 

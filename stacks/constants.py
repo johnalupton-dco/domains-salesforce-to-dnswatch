@@ -6,7 +6,7 @@ FLD_CONTEXT_UPDATES_FROM_SF_BUCKET = "updatesFromSalesforceBucket"
 FLD_CONTEXT_SF_DOMAIN = "domain"
 FLD_CONTEXT_PROFILE = "profile"
 
-LL_CDDO_UTILS = "cddo_utils-0.1.91"
+LL_CDDO_UTILS = "cddo_utils-0.1.92"
 
 
 FLD_CONTEXT_PRIVATESUBNETID1 = "PrivateSubnetId1"
