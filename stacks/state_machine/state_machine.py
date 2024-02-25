@@ -16,7 +16,7 @@ from cddo.utils import constants as cnst
 from cddo.utils import lambdas
 from cddo.utils.constants import LL_REQUESTS
 
-from stacks.constants import LL_CDDO_UTILS
+from stacks.constants import LL_CDDO_UTILS, FLD_CONTEXT_RDSSECRETNAME
 from .vpc import get_rds_vpc
 
 
@@ -130,19 +130,12 @@ def create_queue_consume_state_machine(
     for t in tables:
         t.grant_write_data(fn)
 
-    policy_statements = []
-    policy_statements.append(
-        iam.PolicyStatement(
-            actions=[
-                "secretsmanager:GetSecretValue",
-            ],
-            effect=iam.Effect.ALLOW,
-            resources=[
-                "arn:aws:secretsmanager:eu-west-2:047916624712:secret:cddodomainsrdsSecretAEE4019-rYKIctWRKuZZ-jjql3p"
-            ],
-            sid="SecretAccess",
-        )
+    rds_secret = sm.Secret.from_secret_name_v2(
+        scope=stack,
+        id="RDSSecret",
+        secret_name=context[FLD_CONTEXT_RDSSECRETNAME],
     )
+
     vpc, security_group, vpc_subnets, environment = get_rds_vpc(
         stack=stack, context=context
     )
@@ -153,7 +146,6 @@ def create_queue_consume_state_machine(
         stack=stack,
         task_name="FinaliseSalesforceUpdate",
         description="Finalise Salesforce update",
-        policy_statements=policy_statements,
         security_groups=[security_group],
         vpc=vpc,
         vpc_subnets=vpc_subnets,
@@ -162,6 +154,7 @@ def create_queue_consume_state_machine(
         timeout=180,
     )
     from_salesforce_bucket.grant_read_write(fn)
+    rds_secret.grant_read(fn)
 
     definition = task_start_sf_update.next(task_complete_sf_update)
 
