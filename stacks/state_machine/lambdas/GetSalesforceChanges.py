@@ -20,6 +20,12 @@ from cddo.utils.constants import (
     PS_SALESFORCE_EVENT_ROOT,
     PS_SALESFORCE_LAST_CHECKED,
     SALESFORCE_API_VERSION,
+    FLD_MODEL,
+    FLD_RENAMER,
+    FLD_QUERY,
+    FLD_FIELDS_TO_UPDATE,
+    FLD_FIELDS_TO_JOIN,
+    FLD_FILES_WRITTEN,
 )
 from cddo.utils.salesforce import get_access_token, query_to_df
 
@@ -32,24 +38,27 @@ ddb_client = boto3.client("dynamodb")
 TIMEOUT = 20
 OUTPUT_BUCKET = os.environ[ENV_UPDATE_FROM_SALESFORCE_BUCKET]
 
-
 work = dict()
-# work[FLD_ORGANISATION] = {
-#     "model": "organisation",
-#     "renamer": {"external_id__c": "id", "id": "salesforce_id"},
-#     "query": "select Id, Name, external_id__c from Account where",
-# }
+work[FLD_ORGANISATION] = {
+    FLD_MODEL: "organisation",
+    FLD_RENAMER: {"external_id__c": "id", "id": "salesforce_id"},
+    FLD_QUERY: "select Id, Name, external_id__c from Account where",
+    FLD_FIELDS_TO_UPDATE: ["salesforce_id"],
+    FLD_FIELDS_TO_JOIN: ["id"],
+}
 work[FLD_DOMAIN_RELATION] = {
-    "model": "domain",
-    "renamer": {"external_id__c": "id", "id": "salesforce_id"},
-    "query": "select Id, Name, Organisation__c, Parent_domain__c, Public_suffix__c, Organisation__r.Id, Organisation__r.Name, external_id__c \
+    FLD_MODEL: "domain",
+    FLD_RENAMER: {"external_id__c": "id", "id": "salesforce_id"},
+    FLD_QUERY: "select Id, Name, Organisation__c, Parent_domain__c, Public_suffix__c, Organisation__r.Id, Organisation__r.Name, external_id__c \
     from Domain__c where",
+    FLD_FIELDS_TO_UPDATE: ["salesforce_id"],
+    FLD_FIELDS_TO_JOIN: ["id"],
 }
 
 # work[FLD_ORPHAN_ORGANISATION] = {
-#     "model": "orphan",
-#     "renamer": {"external_id__c": "object_id", "id": "salesforce_id"},
-#     "query": "SELECT Id, Name, external_id__c FROM Account WHERE Id NOT IN (SELECT Organisation__c FROM Domain__c) and",
+#     FLD_MODEL: "orphan",
+#     FLD_RENAMER: {"external_id__c": "object_id", "id": "salesforce_id"},
+#     FLD_QUERY: "SELECT Id, Name, external_id__c FROM Account WHERE Id NOT IN (SELECT Organisation__c FROM Domain__c) and",
 # }
 
 
@@ -247,7 +256,7 @@ def lambda_handler(_event, _context):
     for query_entity, info in work.items():
         print(f"Processing {query_entity}")
 
-        query = f"{info['query']} LastModifiedDate > {salesforce_last_checked_datetime[query_entity]}"
+        query = f"{info[FLD_QUERY]} LastModifiedDate > {salesforce_last_checked_datetime[query_entity]}"
 
         df = query_to_df(query=query, domain=domain, access_token=access_token)
 
@@ -267,9 +276,9 @@ def lambda_handler(_event, _context):
 
         if len(df) != 0:
             df.columns = [x.lower() for x in df.columns]
-            df["model"] = info["model"]
-            df = df.rename(columns=info["renamer"])
-            df_lookup = pd.concat([df_lookup, df[["id", "salesforce_id", "model"]]])
+            df[FLD_MODEL] = info[FLD_MODEL]
+            df = df.rename(columns=info[FLD_RENAMER])
+            df_lookup = pd.concat([df_lookup, df[["id", "salesforce_id", FLD_MODEL]]])
 
         key = f"{FROM_SALESFORCE_FILESTUB}-{query_entity}.csv"
 
@@ -279,7 +288,12 @@ def lambda_handler(_event, _context):
             Key=key,
         )
 
-        files_written[info["model"]] = [key]
+        return_dict = dict()
+        return_dict[FLD_FIELDS_TO_UPDATE] = info[FLD_FIELDS_TO_UPDATE]
+        return_dict[FLD_FIELDS_TO_JOIN] = info[FLD_FIELDS_TO_JOIN]
+        return_dict[FLD_FILES_WRITTEN] = [key]
+
+        files_written[info[FLD_MODEL]] = return_dict
 
         salesforce_last_checked_datetime[query_entity] = now
 
