@@ -36,6 +36,7 @@ ddb_client = boto3.client("dynamodb")
 
 
 TIMEOUT = 20
+FLD_FIELDS_TO_NULL = "fieldsToNull"
 OUTPUT_BUCKET = os.environ[ENV_UPDATE_FROM_SALESFORCE_BUCKET]
 
 work = dict()
@@ -45,6 +46,7 @@ work[FLD_ORGANISATION] = {
     FLD_QUERY: "select Id, Name, external_id__c from Account where",
     FLD_FIELDS_TO_UPDATE: ["salesforce_id"],
     FLD_FIELDS_TO_JOIN: ["id"],
+    FLD_FIELDS_TO_NULL: ["salesforce_id"],
 }
 work[FLD_DOMAIN_RELATION] = {
     FLD_MODEL: "domain",
@@ -53,6 +55,7 @@ work[FLD_DOMAIN_RELATION] = {
     from Domain__c where",
     FLD_FIELDS_TO_UPDATE: ["salesforce_id"],
     FLD_FIELDS_TO_JOIN: ["id"],
+    FLD_FIELDS_TO_NULL: ["salesforce_id", "salesforce_organisation_id"],
 }
 
 # work[FLD_ORPHAN_ORGANISATION] = {
@@ -291,6 +294,7 @@ def lambda_handler(_event, _context):
         return_dict = dict()
         return_dict[FLD_FIELDS_TO_UPDATE] = info[FLD_FIELDS_TO_UPDATE]
         return_dict[FLD_FIELDS_TO_JOIN] = info[FLD_FIELDS_TO_JOIN]
+        return_dict[FLD_FIELDS_TO_NULL] = info[FLD_FIELDS_TO_NULL]
         return_dict[FLD_FILES_WRITTEN] = [key]
 
         files_written[info[FLD_MODEL]] = return_dict

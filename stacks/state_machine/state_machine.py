@@ -121,6 +121,7 @@ def create_queue_consume_state_machine(
         environment={
             ENV_UPDATE_FROM_SALESFORCE_BUCKET: from_salesforce_bucket.bucket_name
         },
+        memory_size=2048,
     )
     from_salesforce_bucket.grant_put(fn)
     salesforce_secret.grant_read(fn)

@@ -1,6 +1,6 @@
 import os
 import io
-from typing import List
+from typing import List, Optional
 import pandas as pd
 import boto3
 import sqlalchemy
@@ -14,6 +14,7 @@ from cddo.utils.constants import (
 from cddo.utils.postgres import get_db_engine
 
 TEMP_TABLE = "zzz_temp_table"
+FLD_FIELDS_TO_NULL = "fieldsToNull"
 
 OUTPUT_BUCKET = os.environ[ENV_UPDATE_FROM_SALESFORCE_BUCKET]
 s3_client = boto3.client("s3")
@@ -27,6 +28,17 @@ def _drop_temp_table(db_conn: sqlalchemy.Connection):
     db_conn.commit()
 
 
+def _create_null_sql(
+    upsert_object: str,
+    fields_to_null: List[str],
+) -> str:
+    set_stmt = ",".join([f"{f}=null" for f in fields_to_null])
+
+    query = f"UPDATE {upsert_object} uo SET {set_stmt}"
+
+    return query
+
+
 def _create_update_sql(
     upsert_object: str,
     fields_to_join: List[str],
@@ -35,7 +47,7 @@ def _create_update_sql(
     set_stmt = ",".join([f"{f}=tt.{f}" for f in fields_to_update])
     where_stmt = " and ".join([f"uo.{f}=tt.{f}" for f in fields_to_join])
 
-    query = f"UPDATE zzz_save_{upsert_object} uo SET {set_stmt} FROM {TEMP_TABLE} tt WHERE {where_stmt}"
+    query = f"UPDATE {upsert_object} uo SET {set_stmt} FROM {TEMP_TABLE} tt WHERE {where_stmt}"
 
     return query
 
@@ -50,7 +62,7 @@ def _create_insert_sql(
 
     where_stmt = " and ".join([f"tt.{f} is null" for f in fields_to_join])
 
-    query = f"INSERT INTO zzz_save_{upsert_object}({flds_stmt}) SELECT {values_stmt} FROM {TEMP_TABLE} tt WHERE {where_stmt}"
+    query = f"INSERT INTO {upsert_object}({flds_stmt}) SELECT {values_stmt} FROM {TEMP_TABLE} tt WHERE {where_stmt}"
 
     return query
 
@@ -62,6 +74,7 @@ def upsert_from_file(
     upsert_object: str,
     fields_to_join: List[str],
     fields_to_update: List[str],
+    fields_to_null: List[str],
 ):
     df_input: pd.DataFrame = pd.read_csv(
         io.StringIO(
@@ -81,22 +94,33 @@ def upsert_from_file(
     )
     db_conn.commit()
 
-    insert_query = _create_insert_sql(
-        upsert_object=upsert_object,
-        fields_to_join=fields_to_join,
-        fields_to_update=fields_to_update,
-    )
+    if len(fields_to_null) != 0:
+        # null_query = _create_null_sql(
+        #     upsert_object=upsert_object, fields_to_null=fields_to_null
+        # )
+        # print(null_query)
+        # res = db_conn.execute(sqlalchemy.sql.text(null_query))
+        # db_conn.commit()
+        # print(f"Nulling {res.rowcount} rows")
+        pass
+
     update_query = _create_update_sql(
         upsert_object=upsert_object,
         fields_to_join=fields_to_join,
         fields_to_update=fields_to_update,
     )
-    print(insert_query)
     print(update_query)
 
     res = db_conn.execute(sqlalchemy.sql.text(update_query))
     db_conn.commit()
     print(f"Updated {res.rowcount} rows")
+
+    insert_query = _create_insert_sql(
+        upsert_object=upsert_object,
+        fields_to_join=fields_to_join,
+        fields_to_update=fields_to_update,
+    )
+    print(insert_query)
 
     # res = db_conn.execute(
     #     sqlalchemy.sql.text(
@@ -112,7 +136,7 @@ def lambda_handler(event, _context):
     s3 = boto3.resource("s3")
     input_files = event[FLD_SALESFORCE_CHANGE_FILES]
 
-    engine, _ = get_db_engine(rds_secret_name=os.environ["RDS_SECRET_NAME"])
+    engine = get_db_engine(rds_secret_name=os.environ["RDS_SECRET_NAME"])
 
     with engine.connect() as db_conn:
         for query_entity, object_info in input_files.items():
@@ -126,13 +150,12 @@ def lambda_handler(event, _context):
                     upsert_object=query_entity,
                     fields_to_join=object_info[FLD_FIELDS_TO_JOIN],
                     fields_to_update=object_info[FLD_FIELDS_TO_UPDATE],
+                    fields_to_null=object_info[FLD_FIELDS_TO_NULL],
                 )
         # #         s3.Object(OUTPUT_BUCKET, f"archive/{file}").copy_from(
         # #             CopySource=f"{OUTPUT_BUCKET}/{file}"
         # #         )
         # #         s3.Object(OUTPUT_BUCKET, file).delete()
-
-        return
 
         df_lookup = pd.read_csv(
             io.StringIO(
@@ -219,7 +242,7 @@ def lambda_handler(event, _context):
         # insert new
         res = db_conn.execute(
             sqlalchemy.sql.text(
-                f"select id, salesforce_id, content_type_id, batch from {TEMP_TABLE} WHERE sso_id IS NULL"
+                f"INSERT INTO salesforce_salesforceobject(id, salesforce_id, content_type_id, batch) select id, salesforce_id, content_type_id, batch from {TEMP_TABLE} WHERE sso_id IS NULL"
             )
         )
 
